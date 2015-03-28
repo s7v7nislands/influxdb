@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -494,16 +495,52 @@ func runTestsData(t *testing.T, testName string, nodes Cluster, database, retent
 			expected: `{"results":[{"series":[{"name":"cpu","tags":{"host":"server-9","region":"us-east"},"columns":["time","count"],"values":[["1970-01-01T00:00:00Z",1]]}]}]}`,
 		},
 
-		// FROM /regex/
+		// FROM regex tests
 		{
 			reset: true,
-			name:  "FROM regex",
+			name:  "FROM regex using default db and rp",
 			write: `{"database" : "%DB%", "retentionPolicy" : "%RP%", "points": [
 				{"name": "cpu1", "timestamp": "2015-02-28T01:03:36.703820946Z", "tags": {"host": "server01"}, "fields": {"value": 10}},
 				{"name": "cpu2", "timestamp": "2015-02-28T01:03:36.703820946Z", "tags": {"host": "server01"}, "fields": {"value": 20}},
 				{"name": "cpu3", "timestamp": "2015-02-28T01:03:36.703820946Z", "tags": {"host": "server01"}, "fields": {"value": 30}}
 			]}`,
 			query:    `SELECT * FROM /cpu[13]/`,
+			queryDb:  "%DB%",
+			expected: `{"results":[{"series":[{"name":"cpu1","columns":["time","value"],"values":[["2015-02-28T01:03:36.703820946Z",10]]},{"name":"cpu3","columns":["time","value"],"values":[["2015-02-28T01:03:36.703820946Z",30]]}]}]}`,
+		},
+		{
+			reset: true,
+			name:  `FROM regex specifying db and rp`,
+			write: `{"database" : "%DB%", "retentionPolicy" : "%RP%", "points": [
+				{"name": "cpu1", "timestamp": "2015-02-28T01:03:36.703820946Z", "tags": {"host": "server01"}, "fields": {"value": 10}},
+				{"name": "cpu2", "timestamp": "2015-02-28T01:03:36.703820946Z", "tags": {"host": "server01"}, "fields": {"value": 20}},
+				{"name": "cpu3", "timestamp": "2015-02-28T01:03:36.703820946Z", "tags": {"host": "server01"}, "fields": {"value": 30}}
+			]}`,
+			query:    `SELECT * FROM "%DB%"."%RP%"./cpu[13]/`,
+			queryDb:  "%DB%",
+			expected: `{"results":[{"series":[{"name":"cpu1","columns":["time","value"],"values":[["2015-02-28T01:03:36.703820946Z",10]]},{"name":"cpu3","columns":["time","value"],"values":[["2015-02-28T01:03:36.703820946Z",30]]}]}]}`,
+		},
+		{
+			reset: true,
+			name:  `FROM regex using specified db and default rp`,
+			write: `{"database" : "%DB%", "retentionPolicy" : "%RP%", "points": [
+				{"name": "cpu1", "timestamp": "2015-02-28T01:03:36.703820946Z", "tags": {"host": "server01"}, "fields": {"value": 10}},
+				{"name": "cpu2", "timestamp": "2015-02-28T01:03:36.703820946Z", "tags": {"host": "server01"}, "fields": {"value": 20}},
+				{"name": "cpu3", "timestamp": "2015-02-28T01:03:36.703820946Z", "tags": {"host": "server01"}, "fields": {"value": 30}}
+			]}`,
+			query:    `SELECT * FROM "%DB%"../cpu[13]/`,
+			queryDb:  "%DB%",
+			expected: `{"results":[{"series":[{"name":"cpu1","columns":["time","value"],"values":[["2015-02-28T01:03:36.703820946Z",10]]},{"name":"cpu3","columns":["time","value"],"values":[["2015-02-28T01:03:36.703820946Z",30]]}]}]}`,
+		},
+		{
+			reset: true,
+			name:  `FROM regex using default db and specified rp`,
+			write: `{"database" : "%DB%", "retentionPolicy" : "%RP%", "points": [
+				{"name": "cpu1", "timestamp": "2015-02-28T01:03:36.703820946Z", "tags": {"host": "server01"}, "fields": {"value": 10}},
+				{"name": "cpu2", "timestamp": "2015-02-28T01:03:36.703820946Z", "tags": {"host": "server01"}, "fields": {"value": 20}},
+				{"name": "cpu3", "timestamp": "2015-02-28T01:03:36.703820946Z", "tags": {"host": "server01"}, "fields": {"value": 30}}
+			]}`,
+			query:    `SELECT * FROM "%RP%"./cpu[13]/`,
 			queryDb:  "%DB%",
 			expected: `{"results":[{"series":[{"name":"cpu1","columns":["time","value"],"values":[["2015-02-28T01:03:36.703820946Z",10]]},{"name":"cpu3","columns":["time","value"],"values":[["2015-02-28T01:03:36.703820946Z",30]]}]}]}`,
 		},
@@ -1224,7 +1261,7 @@ func runTestsData(t *testing.T, testName string, nodes Cluster, database, retent
 		// Continuous query control.
 		{
 			name:     "create continuous query",
-			query:    `CREATE CONTINUOUS QUERY myquery ON %DB% BEGIN SELECT count() INTO measure1 FROM myseries GROUP BY time(10m) END`,
+			query:    `CREATE CONTINUOUS QUERY myquery ON %DB% BEGIN SELECT count(value) INTO measure1 FROM myseries GROUP BY time(10m) END`,
 			queryOne: true,
 			expected: `{"results":[{}]}`,
 		},
@@ -1235,20 +1272,32 @@ func runTestsData(t *testing.T, testName string, nodes Cluster, database, retent
 	}
 
 	// See if we should run a subset of this test
-	testPrefix := os.Getenv("TEST_PREFIX")
+	testPrefix := os.Getenv("INFLUXDB_TEST_PREFIX")
 	if testPrefix != "" {
 		t.Logf("Skipping all tests that do not match the prefix of %q\n", testPrefix)
 	}
 
-	for i, tt := range tests {
+	// Get env var to filter which tests we run.
+	var filter *regexp.Regexp
+	if pattern := os.Getenv("INFLUXDB_TEST_RUN"); pattern != "" {
+		fmt.Printf("pattern = %#v\n", pattern)
+		filter = regexp.MustCompile(pattern)
+	}
 
+	for i, tt := range tests {
 		name := tt.name
 		if name == "" {
 			name = tt.query
 		}
 
+		// If a prefix was specified throught the INFLUXDB_TEST_PREFIX env var, filter by that.
 		if testPrefix != "" && !strings.HasPrefix(name, testPrefix) {
-			continue
+			tt.skip = true
+		}
+
+		// If a regex pattern was specified through the INFLUXDB_TEST_RUN env var, filter by that.
+		if filter != nil && !filter.MatchString(tt.query) {
+			tt.skip = true
 		}
 
 		if tt.skip {
@@ -1283,9 +1332,10 @@ func runTestsData(t *testing.T, testName string, nodes Cluster, database, retent
 			if tt.queryDb != "" {
 				urlDb = tt.queryDb
 			}
-			got, ok := queryAndWait(t, qNodes, rewriteDbRp(urlDb, database, retention), rewriteDbRp(tt.query, database, retention), rewriteDbRp(tt.expected, database, retention), 3*time.Second)
+			qry := rewriteDbRp(tt.query, database, retention)
+			got, ok := queryAndWait(t, nodes, rewriteDbRp(urlDb, database, retention), qry, rewriteDbRp(tt.expected, database, retention), 1*time.Second)
 			if !ok {
-				t.Errorf("Test #%d: \"%s\" failed\n  exp: %s\n  got: %s\n", i, name, rewriteDbRp(tt.expected, database, retention), got)
+				t.Errorf("Test #%d: \"%s\" failed\n  query: %s\n  exp: %s\n  got: %s\n", i, name, qry, rewriteDbRp(tt.expected, database, retention), got)
 			}
 		}
 	}
