@@ -2255,7 +2255,6 @@ func (s *Server) rewriteSelectStatement(stmt *influxql.SelectStatement) (*influx
 		return nil, err
 	}
 	stmt.Sources = sources
-	fmt.Printf("sources = %#v\n", sources.String())
 
 	// Expand wildcards in the fields or GROUP BY.
 	if stmt.HasWildcard() {
@@ -2293,9 +2292,9 @@ func (s *Server) expandWildcards(stmt *influxql.SelectStatement) (*influxql.Sele
 			}
 
 			// Lookup the measurement in the database.
-			mm := db.measurements[strings.Trim(m.Name, `"`)]
+			mm := db.measurements[m.Name]
 			if mm == nil {
-				return nil, ErrMeasurementNotFound(m.Name)
+				return nil, ErrMeasurementNotFound(m.String())
 			}
 
 			// Get the fields for this measurement.
@@ -2323,6 +2322,7 @@ func (s *Server) expandWildcards(stmt *influxql.SelectStatement) (*influxql.Sele
 }
 
 // expandSources expands regex sources and removes duplicates.
+// NOTE: sources must be normalized (db and rp set) before calling this function.
 func (s *Server) expandSources(sources influxql.Sources) (influxql.Sources, error) {
 	// Use a map as a set to prevent duplicates. Two regexes might produce
 	// duplicates when expanded.
@@ -2334,7 +2334,9 @@ func (s *Server) expandSources(sources influxql.Sources) (influxql.Sources, erro
 		switch src := source.(type) {
 		case *influxql.Measurement:
 			if src.Regex == nil {
-				set[src.Name] = src
+				name := src.String()
+				set[name] = src
+				names = append(names, name)
 				continue
 			}
 
@@ -3600,14 +3602,10 @@ func (s *Server) applyCreateContinuousQueryCommand(m *messaging.Message) error {
 		return err
 	}
 
-	fmt.Printf("cq.cq.Database = %#v\n", cq.cq.Database)
-
 	// normalize the select statement in the CQ so that it has the database and retention policy inserted
 	if err := s.normalizeStatement(cq.cq.Source, cq.cq.Database); err != nil {
 		return err
 	}
-
-	fmt.Printf("cq.cq.Source.String() = %#v\n", cq.cq.Source.String())
 
 	// ensure the into database exists
 	if s.databases[cq.intoDB()] == nil {

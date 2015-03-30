@@ -170,7 +170,7 @@ func createCombinedNodeCluster(t *testing.T, testName, tmpDir string, nNodes, ba
 // createDatabase creates a database, and verifies that the creation was successful.
 func createDatabase(t *testing.T, testName string, nodes Cluster, database string) {
 	t.Logf("Test: %s: creating database %s", testName, database)
-	query(t, nodes[:1], "", "CREATE DATABASE "+database, `{"results":[{}]}`)
+	query(t, nodes[:1], "", "CREATE DATABASE "+database, `{"results":[{}]}`, "")
 }
 
 // createRetentionPolicy creates a retetention policy and verifies that the creation was successful.
@@ -178,13 +178,13 @@ func createDatabase(t *testing.T, testName string, nodes Cluster, database strin
 func createRetentionPolicy(t *testing.T, testName string, nodes Cluster, database, retention string) {
 	t.Logf("Creating retention policy %s for database %s", retention, database)
 	command := fmt.Sprintf("CREATE RETENTION POLICY %s ON %s DURATION 1h REPLICATION %d DEFAULT", retention, database, len(nodes))
-	query(t, nodes[:1], "", command, `{"results":[{}]}`)
+	query(t, nodes[:1], "", command, `{"results":[{}]}`, "")
 }
 
 // deleteDatabase delete a database, and verifies that the deletion was successful.
 func deleteDatabase(t *testing.T, testName string, nodes Cluster, database string) {
 	t.Logf("Test: %s: deleting database %s", testName, database)
-	query(t, nodes[:1], "", "DROP DATABASE "+database, `{"results":[{}]}`)
+	query(t, nodes[:1], "", "DROP DATABASE "+database, `{"results":[{}]}`, "")
 }
 
 // writes writes the provided data to the cluster. It verfies that a 200 OK is returned by the server.
@@ -205,7 +205,7 @@ func write(t *testing.T, node *Node, data string) {
 
 // query executes the given query against all nodes in the cluster, and verifies no errors occured, and
 // ensures the returned data is as expected
-func query(t *testing.T, nodes Cluster, urlDb, query, expected string) (string, bool) {
+func query(t *testing.T, nodes Cluster, urlDb, query, expected, expectPattern string) (string, bool) {
 	v := url.Values{"q": []string{query}}
 	if urlDb != "" {
 		v.Set("db", urlDb)
@@ -227,8 +227,13 @@ func query(t *testing.T, nodes Cluster, urlDb, query, expected string) (string, 
 		}
 		actual = string(body)
 
-		if expected != actual {
+		if expected != "" && expected != actual {
 			return actual, false
+		} else if expectPattern != "" {
+			re := regexp.MustCompile(expectPattern)
+			if !re.MatchString(actual) {
+				return actual, false
+			}
 		}
 	}
 
@@ -237,7 +242,7 @@ func query(t *testing.T, nodes Cluster, urlDb, query, expected string) (string, 
 
 // queryAndWait executes the given query against all nodes in the cluster, and verifies no errors occured, and
 // ensures the returned data is as expected until the timeout occurs
-func queryAndWait(t *testing.T, nodes Cluster, urlDb, q, expected string, timeout time.Duration) (string, bool) {
+func queryAndWait(t *testing.T, nodes Cluster, urlDb, q, expected, expectPattern string, timeout time.Duration) (string, bool) {
 	v := url.Values{"q": []string{q}}
 	if urlDb != "" {
 		v.Set("db", urlDb)
@@ -266,7 +271,7 @@ func queryAndWait(t *testing.T, nodes Cluster, urlDb, q, expected string, timeou
 	}
 
 	for {
-		if got, ok := query(t, nodes, urlDb, q, expected); ok {
+		if got, ok := query(t, nodes, urlDb, q, expected, expectPattern); ok {
 			return got, ok
 		} else if atomic.LoadInt32(&timedOut) == 1 {
 			return got, false
@@ -354,7 +359,7 @@ func runTests_Errors(t *testing.T, nodes Cluster) {
 		}
 
 		if tt.query != "" {
-			got, ok := query(t, nodes, "", tt.query, tt.expected)
+			got, ok := query(t, nodes, "", tt.query, tt.expected, "")
 			if !ok {
 				t.Errorf("Test '%s' failed, expected: %s, got: %s", tt.name, tt.expected, got)
 			}
@@ -385,6 +390,7 @@ func runTestsData(t *testing.T, testName string, nodes Cluster, database, retent
 		queryDb  string  // If set, is used as the "db" query param.
 		queryOne bool    // If set, only 1 node is queried.
 		expected string  // If 'query' is equal to the blank string, this is ignored.
+		expectPattern string // Regexp alternative to expected field.
 	}{
 		// Data read and write tests
 		{
@@ -423,9 +429,9 @@ func runTestsData(t *testing.T, testName string, nodes Cluster, database, retent
 		},
 
 		{
-			name:     "measurement not found",
-			query:    `SELECT value FROM "%DB%"."%RP%".foobarbaz`,
-			expected: `{"results":[{"error":"measurement not found"}]}`,
+			name:          "measurement not found",
+			query:         `SELECT value FROM "%DB%"."%RP%".foobarbaz`,
+			expectPattern: `.*measurement not found.*`,
 		},
 		{
 			name:     "field not found",
@@ -829,9 +835,9 @@ func runTestsData(t *testing.T, testName string, nodes Cluster, database, retent
 			expected: `{"results":[{"series":[{"name":"logs","columns":["time","event"]}]}]}`,
 		},
 		{
-			name:     "missing measurement with `GROUP BY *`",
-			query:    `select load from "%DB%"."%RP%".missing group by *`,
-			expected: `{"results":[{"error":"measurement not found: \"%DB%\".\"%RP%\".\"missing\""}]}`,
+			name:          "missing measurement with `GROUP BY *`",
+			query:         `select load from "%DB%"."%RP%".missing group by *`,
+			expectPattern: `.*measurement not found: .*missing.*`,
 		},
 		{
 			name: "where on a tag, field and time",
@@ -855,62 +861,63 @@ func runTestsData(t *testing.T, testName string, nodes Cluster, database, retent
 				{"name": "limit", "timestamp": "2009-11-10T23:00:04Z","fields": {"foo": 4}, "tags": {"tennant": "paul"}},
 				{"name": "limit", "timestamp": "2009-11-10T23:00:05Z","fields": {"foo": 5}, "tags": {"tennant": "todd"}}
 			]}`,
-			query:    `select foo from "%DB%"."%RP%".limit LIMIT 2`,
+<<<<<<< HEAD
+			query:    `select foo from "%DB%"."%RP%"."limit" LIMIT 2`,
 			expected: `{"results":[{"series":[{"name":"limit","columns":["time","foo"],"values":[["2009-11-10T23:00:02Z",2],["2009-11-10T23:00:03Z",3]]}]}]}`,
 		},
 		{
 			name:     "limit higher than the number of data points",
-			query:    `select foo from "%DB%"."%RP%".limit LIMIT 20`,
+			query:    `select foo from "%DB%"."%RP%"."limit" LIMIT 20`,
 			expected: `{"results":[{"series":[{"name":"limit","columns":["time","foo"],"values":[["2009-11-10T23:00:02Z",2],["2009-11-10T23:00:03Z",3],["2009-11-10T23:00:04Z",4],["2009-11-10T23:00:05Z",5]]}]}]}`,
 		},
 		{
 			name:     "limit and offset",
-			query:    `select foo from "%DB%"."%RP%".limit LIMIT 2 OFFSET 1`,
+			query:    `select foo from "%DB%"."%RP%"."limit" LIMIT 2 OFFSET 1`,
 			expected: `{"results":[{"series":[{"name":"limit","columns":["time","foo"],"values":[["2009-11-10T23:00:03Z",3],["2009-11-10T23:00:04Z",4]]}]}]}`,
 		},
 		{
 			name:     "limit + offset equal to total number of points",
-			query:    `select foo from "%DB%"."%RP%".limit LIMIT 3 OFFSET 3`,
+			query:    `select foo from "%DB%"."%RP%"."limit" LIMIT 3 OFFSET 3`,
 			expected: `{"results":[{"series":[{"name":"limit","columns":["time","foo"],"values":[["2009-11-10T23:00:05Z",5]]}]}]}`,
 		},
 		{
 			name:     "limit - offset higher than number of points",
-			query:    `select foo from "%DB%"."%RP%".limit LIMIT 2 OFFSET 20`,
+			query:    `select foo from "%DB%"."%RP%"."limit" LIMIT 2 OFFSET 20`,
 			expected: `{"results":[{"series":[{"name":"limit","columns":["time","foo"]}]}]}`,
 		},
 		{
 			name:     "limit on points with group by time",
-			query:    `select mean(foo) from "%DB%"."%RP%".limit WHERE time >= '2009-11-10T23:00:02Z' AND time < '2009-11-10T23:00:06Z' GROUP BY time(1s) LIMIT 2`,
+			query:    `select mean(foo) from "%DB%"."%RP%"."limit" WHERE time >= '2009-11-10T23:00:02Z' AND time < '2009-11-10T23:00:06Z' GROUP BY time(1s) LIMIT 2`,
 			expected: `{"results":[{"series":[{"name":"limit","columns":["time","mean"],"values":[["2009-11-10T23:00:02Z",2],["2009-11-10T23:00:03Z",3]]}]}]}`,
 		},
 		{
 			name:     "limit higher than the number of data points with group by time",
-			query:    `select mean(foo) from "%DB%"."%RP%".limit WHERE time >= '2009-11-10T23:00:02Z' AND time < '2009-11-10T23:00:06Z' GROUP BY time(1s) LIMIT 20`,
+			query:    `select mean(foo) from "%DB%"."%RP%"."limit" WHERE time >= '2009-11-10T23:00:02Z' AND time < '2009-11-10T23:00:06Z' GROUP BY time(1s) LIMIT 20`,
 			expected: `{"results":[{"series":[{"name":"limit","columns":["time","mean"],"values":[["2009-11-10T23:00:02Z",2],["2009-11-10T23:00:03Z",3],["2009-11-10T23:00:04Z",4],["2009-11-10T23:00:05Z",5]]}]}]}`,
 		},
 		{
 			name:     "limit and offset with group by time",
-			query:    `select mean(foo) from "%DB%"."%RP%".limit WHERE time >= '2009-11-10T23:00:02Z' AND time < '2009-11-10T23:00:06Z' GROUP BY time(1s) LIMIT 2 OFFSET 1`,
+			query:    `select mean(foo) from "%DB%"."%RP%"."limit" WHERE time >= '2009-11-10T23:00:02Z' AND time < '2009-11-10T23:00:06Z' GROUP BY time(1s) LIMIT 2 OFFSET 1`,
 			expected: `{"results":[{"series":[{"name":"limit","columns":["time","mean"],"values":[["2009-11-10T23:00:03Z",3],["2009-11-10T23:00:04Z",4]]}]}]}`,
 		},
 		{
 			name:     "limit + offset equal to the  number of points with group by time",
-			query:    `select mean(foo) from "%DB%"."%RP%".limit WHERE time >= '2009-11-10T23:00:02Z' AND time < '2009-11-10T23:00:06Z' GROUP BY time(1s) LIMIT 3 OFFSET 3`,
+			query:    `select mean(foo) from "%DB%"."%RP%"."limit" WHERE time >= '2009-11-10T23:00:02Z' AND time < '2009-11-10T23:00:06Z' GROUP BY time(1s) LIMIT 3 OFFSET 3`,
 			expected: `{"results":[{"series":[{"name":"limit","columns":["time","mean"],"values":[["2009-11-10T23:00:05Z",5]]}]}]}`,
 		},
 		{
 			name:     "limit - offset higher than number of points with group by time",
-			query:    `select mean(foo) from "%DB%"."%RP%".limit WHERE time >= '2009-11-10T23:00:02Z' AND time < '2009-11-10T23:00:06Z' GROUP BY time(1s) LIMIT 2 OFFSET 20`,
+			query:    `select mean(foo) from "%DB%"."%RP%"."limit" WHERE time >= '2009-11-10T23:00:02Z' AND time < '2009-11-10T23:00:06Z' GROUP BY time(1s) LIMIT 2 OFFSET 20`,
 			expected: `{"results":[{}]}`,
 		},
 		{
 			name:     "limit higher than the number of data points should error",
-			query:    `select mean(foo)  from "%DB%"."%RP%".limit  where  time > '2000-01-01T00:00:00Z' group by time(1s), * fill(0)  limit 2147483647`,
+			query:    `select mean(foo)  from "%DB%"."%RP%"."limit"  where  time > '2000-01-01T00:00:00Z' group by time(1s), * fill(0)  limit 2147483647`,
 			expected: `{"results":[{"error":"too many points in the group by interval. maybe you forgot to specify a where time clause?"}]}`,
 		},
 		{
 			name:     "limit1 higher than MaxGroupBy but the number of data points is less than MaxGroupBy",
-			query:    `select mean(foo)  from "%DB%"."%RP%".limit  where  time >= '2009-11-10T23:00:02Z' and time < '2009-11-10T23:00:03Z' group by time(1s), * fill(0)  limit 2147483647`,
+			query:    `select mean(foo)  from "%DB%"."%RP%"."limit"  where  time >= '2009-11-10T23:00:02Z' and time < '2009-11-10T23:00:03Z' group by time(1s), * fill(0)  limit 2147483647`,
 			expected: `{"results":[{"series":[{"name":"limit","tags":{"tennant":"paul"},"columns":["time","mean"],"values":[["2009-11-10T23:00:02Z",2]]}]}]}`,
 		},
 
@@ -1267,7 +1274,7 @@ func runTestsData(t *testing.T, testName string, nodes Cluster, database, retent
 		},
 		{
 			query:    `SHOW CONTINUOUS QUERIES`,
-			expected: `{"results":[{"series":[{"name":"%DB%","columns":["name","query"],"values":[["myquery","CREATE CONTINUOUS QUERY myquery ON %DB% BEGIN SELECT count() INTO measure1 FROM myseries GROUP BY time(10m) END"]]}]}]}`,
+			expected: `{"results":[{"series":[{"name":"%DB%","columns":["name","query"],"values":[["myquery","CREATE CONTINUOUS QUERY myquery ON %DB% BEGIN SELECT count(value) INTO \"%DB%\".\"%RP%\".\"measure1\" FROM \"%DB%\".\"%RP%\".\"myseries\" GROUP BY time(10m) END"]]}]}]}`,
 		},
 	}
 
@@ -1333,9 +1340,13 @@ func runTestsData(t *testing.T, testName string, nodes Cluster, database, retent
 				urlDb = tt.queryDb
 			}
 			qry := rewriteDbRp(tt.query, database, retention)
-			got, ok := queryAndWait(t, nodes, rewriteDbRp(urlDb, database, retention), qry, rewriteDbRp(tt.expected, database, retention), 1*time.Second)
+			got, ok := queryAndWait(t, nodes, rewriteDbRp(urlDb, database, retention), qry, rewriteDbRp(tt.expected, database, retention), rewriteDbRp(tt.expectPattern, database, retention), 1*time.Second)
 			if !ok {
-				t.Errorf("Test #%d: \"%s\" failed\n  query: %s\n  exp: %s\n  got: %s\n", i, name, qry, rewriteDbRp(tt.expected, database, retention), got)
+				if tt.expected != "" {
+					t.Errorf("Test #%d: \"%s\" failed\n  query: %s\n  exp: %s\n  got: %s\n", i, name, qry, rewriteDbRp(tt.expected, database, retention), got)
+				} else {
+					t.Errorf("Test #%d: \"%s\" failed\n  query: %s\n  exp: %s\n  got: %s\n", i, name, qry, rewriteDbRp(tt.expectPattern, database, retention), got)
+				}
 			}
 		}
 	}
@@ -1553,7 +1564,7 @@ func Test_ServerSingleGraphiteIntegration(t *testing.T) {
 	expected := fmt.Sprintf(`{"results":[{"series":[{"name":"cpu","columns":["time","cpu"],"values":[["%s",23.456]]}]}]}`, now.Format(time.RFC3339Nano))
 
 	// query and wait for results
-	got, ok := queryAndWait(t, nodes, "graphite", `select * from "graphite"."raw".cpu`, expected, 2*time.Second)
+	got, ok := queryAndWait(t, nodes, "graphite", `select * from "graphite"."raw".cpu`, expected, "", 2*time.Second)
 	if !ok {
 		t.Errorf(`Test "%s" failed, expected: %s, got: %s`, testName, expected, got)
 	}
@@ -1656,7 +1667,7 @@ func Test_ServerSingleGraphiteIntegration_ZeroDataPoint(t *testing.T) {
 	expected := fmt.Sprintf(`{"results":[{"series":[{"name":"cpu","columns":["time","cpu"],"values":[["%s",0]]}]}]}`, now.Format(time.RFC3339Nano))
 
 	// query and wait for results
-	got, ok := queryAndWait(t, nodes, "graphite", `select * from "graphite"."raw".cpu`, expected, 2*time.Second)
+	got, ok := queryAndWait(t, nodes, "graphite", `select * from "graphite"."raw".cpu`, expected, "", 2*time.Second)
 	if !ok {
 		t.Errorf(`Test "%s" failed, expected: %s, got: %s`, testName, expected, got)
 	}
@@ -1691,14 +1702,14 @@ func Test_ServerSingleGraphiteIntegration_NoDatabase(t *testing.T) {
 
 	// Need to wait for the database to be created
 	expected := `{"results":[{"series":[{"name":"databases","columns":["name"],"values":[["graphite"]]}]}]}`
-	got, ok := queryAndWait(t, nodes, "graphite", `show databases`, expected, 2*time.Second)
+	got, ok := queryAndWait(t, nodes, "graphite", `show databases`, expected, "", 2*time.Second)
 	if !ok {
 		t.Errorf(`Test "%s" failed, expected: %s, got: %s`, testName, expected, got)
 	}
 
 	// Need to wait for the database to get a default retention policy
 	expected = `{"results":[{"series":[{"columns":["name","duration","replicaN","default"],"values":[["default","0",1,true]]}]}]}`
-	got, ok = queryAndWait(t, nodes, "graphite", `show retention policies graphite`, expected, 2*time.Second)
+	got, ok = queryAndWait(t, nodes, "graphite", `show retention policies graphite`, expected, "", 2*time.Second)
 	if !ok {
 		t.Errorf(`Test "%s" failed, expected: %s, got: %s`, testName, expected, got)
 	}
@@ -1716,7 +1727,7 @@ func Test_ServerSingleGraphiteIntegration_NoDatabase(t *testing.T) {
 
 	// Wait for data to show up
 	expected = fmt.Sprintf(`{"results":[{"series":[{"name":"cpu","columns":["time","cpu"],"values":[["%s",23.456]]}]}]}`, now.Format(time.RFC3339Nano))
-	got, ok = queryAndWait(t, nodes, "graphite", `select * from "graphite"."default".cpu`, expected, 2*time.Second)
+	got, ok = queryAndWait(t, nodes, "graphite", `select * from "graphite"."default".cpu`, expected, "", 2*time.Second)
 	if !ok {
 		t.Errorf(`Test "%s" failed, expected: %s, got: %s`, testName, expected, got)
 	}
