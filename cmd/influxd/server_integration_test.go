@@ -318,7 +318,7 @@ func runTest_rawDataReturnsInOrder(t *testing.T, testName string, nodes Cluster,
 	}
 
 	expected = fmt.Sprintf(`{"results":[{"series":[{"name":"cpu","columns":["time","count"],"values":[["1970-01-01T00:00:00Z",%d]]}]}]}`, numPoints-1)
-	got, ok := queryAndWait(t, nodes, database, `SELECT count(value) FROM cpu`, expected, 60*time.Second)
+	got, ok := queryAndWait(t, nodes, database, `SELECT count(value) FROM cpu`, expected, "", 60*time.Second)
 	if !ok {
 		t.Errorf("test %s:rawDataReturnsInOrder failed, SELECT count() query returned unexpected data\nexp: %s\n, got: %s", testName, expected, got)
 	}
@@ -329,7 +329,7 @@ func runTest_rawDataReturnsInOrder(t *testing.T, testName string, nodes Cluster,
 		expectedValues = append(expectedValues, fmt.Sprintf(`["%s",%d]`, time.Unix(int64(i), int64(0)).UTC().Format(time.RFC3339), i))
 	}
 	expected = fmt.Sprintf(`{"results":[{"series":[{"name":"cpu","columns":["time","value"],"values":[%s]}]}]}`, strings.Join(expectedValues, ","))
-	got, ok = query(t, nodes, database, `SELECT value FROM cpu`, expected)
+	got, ok = query(t, nodes, database, `SELECT value FROM cpu`, expected, "")
 	if !ok {
 		t.Errorf("test %s failed, SELECT query returned unexpected data\nexp: %s\ngot: %s", testName, expected, got)
 	}
@@ -381,16 +381,16 @@ func runTestsData(t *testing.T, testName string, nodes Cluster, database, retent
 	// The tests. Within these tests %DB% and %RP% will be replaced with the database and retention passed into
 	// this function.
 	tests := []struct {
-		skip     bool    // Skip the test.
-		reset    bool    // Delete and recreate the database.
-		name     string  // Test name, for easy-to-read test log output.
-		write    string  // If equal to the empty string, no data is written.
-		writeFn  writeFn // If non-nil, called after 'write' data (if any) is written.
-		query    string  // If equal to the blank string, no query is executed.
-		queryDb  string  // If set, is used as the "db" query param.
-		queryOne bool    // If set, only 1 node is queried.
-		expected string  // If 'query' is equal to the blank string, this is ignored.
-		expectPattern string // Regexp alternative to expected field.
+		skip          bool    // Skip the test.
+		reset         bool    // Delete and recreate the database.
+		name          string  // Test name, for easy-to-read test log output.
+		write         string  // If equal to the empty string, no data is written.
+		writeFn       writeFn // If non-nil, called after 'write' data (if any) is written.
+		query         string  // If equal to the blank string, no query is executed.
+		queryDb       string  // If set, is used as the "db" query param.
+		queryOne      bool    // If set, only 1 node is queried.
+		expected      string  // If 'query' is equal to the blank string, this is ignored.
+		expectPattern string  // Regexp alternative to expected field.
 	}{
 		// Data read and write tests
 		{
@@ -861,7 +861,6 @@ func runTestsData(t *testing.T, testName string, nodes Cluster, database, retent
 				{"name": "limit", "timestamp": "2009-11-10T23:00:04Z","fields": {"foo": 4}, "tags": {"tennant": "paul"}},
 				{"name": "limit", "timestamp": "2009-11-10T23:00:05Z","fields": {"foo": 5}, "tags": {"tennant": "todd"}}
 			]}`,
-<<<<<<< HEAD
 			query:    `select foo from "%DB%"."%RP%"."limit" LIMIT 2`,
 			expected: `{"results":[{"series":[{"name":"limit","columns":["time","foo"],"values":[["2009-11-10T23:00:02Z",2],["2009-11-10T23:00:03Z",3]]}]}]}`,
 		},
@@ -1616,7 +1615,7 @@ func Test_ServerSingleGraphiteIntegration_FractionalTime(t *testing.T) {
 	expected := fmt.Sprintf(`{"results":[{"series":[{"name":"cpu","columns":["time","cpu"],"values":[["%s",23.456]]}]}]}`, now.Format(time.RFC3339Nano))
 
 	// query and wait for results
-	got, ok := queryAndWait(t, nodes, "graphite", `select * from "graphite"."raw".cpu`, expected, 2*time.Second)
+	got, ok := queryAndWait(t, nodes, "graphite", `select * from "graphite"."raw".cpu`, expected, "", 2*time.Second)
 	if !ok {
 		t.Errorf(`Test "%s" failed, expected: %s, got: %s`, testName, expected, got)
 	}
@@ -1778,7 +1777,7 @@ func Test_ServerOpenTSDBIntegration(t *testing.T) {
 	expected := fmt.Sprintf(`{"results":[{"series":[{"name":"cpu","columns":["time","cpu"],"values":[["%s",10]]}]}]}`, now.Format(time.RFC3339Nano))
 
 	// query and wait for results
-	got, ok := queryAndWait(t, nodes, "opentsdb", `select * from "opentsdb"."raw".cpu`, expected, 2*time.Second)
+	got, ok := queryAndWait(t, nodes, "opentsdb", `select * from "opentsdb"."raw".cpu`, expected, "", 2*time.Second)
 	if !ok {
 		t.Errorf(`Test "%s" failed, expected: %s, got: %s`, testName, expected, got)
 	}
@@ -1832,7 +1831,7 @@ func Test_ServerOpenTSDBIntegration_WithTags(t *testing.T) {
 	expected := fmt.Sprintf(`{"results":[{"series":[{"name":"cpu","columns":["time","cpu"],"values":[["%s",20]]}]}]}`, now.Format(time.RFC3339Nano))
 
 	// query and wait for results
-	got, ok := queryAndWait(t, nodes, "opentsdb", `select * from "opentsdb"."raw".cpu where tag1='val3'`, expected, 2*time.Second)
+	got, ok := queryAndWait(t, nodes, "opentsdb", `select * from "opentsdb"."raw".cpu where tag1='val3'`, expected, "", 2*time.Second)
 	if !ok {
 		t.Errorf(`Test "%s" failed, expected: %s, got: %s`, testName, expected, got)
 	}
@@ -1884,7 +1883,7 @@ func Test_ServerOpenTSDBIntegration_BadData(t *testing.T) {
 	expected := fmt.Sprintf(`{"results":[{"series":[{"name":"cpu","columns":["time","cpu"],"values":[["%s",10]]}]}]}`, now.Format(time.RFC3339Nano))
 
 	// query and wait for results
-	got, ok := queryAndWait(t, nodes, "opentsdb", `select * from "opentsdb"."raw".cpu`, expected, 2*time.Second)
+	got, ok := queryAndWait(t, nodes, "opentsdb", `select * from "opentsdb"."raw".cpu`, expected, "", 2*time.Second)
 	if !ok {
 		t.Errorf(`Test "%s" failed, expected: %s, got: %s`, testName, expected, got)
 	}

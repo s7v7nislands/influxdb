@@ -269,7 +269,8 @@ func TestParser_ParseStatement(t *testing.T) {
 		{
 			s: `SELECT * FROM "db"."rp"./cpu.*/`,
 			stmt: &influxql.SelectStatement{
-				Fields: []*influxql.Field{{Expr: &influxql.Wildcard{}}},
+				IsRawQuery: true,
+				Fields:     []*influxql.Field{{Expr: &influxql.Wildcard{}}},
 				Sources: []influxql.Source{&influxql.Measurement{
 					Database:        `db`,
 					RetentionPolicy: `rp`,
@@ -281,7 +282,8 @@ func TestParser_ParseStatement(t *testing.T) {
 		{
 			s: `SELECT * FROM "db"../cpu.*/`,
 			stmt: &influxql.SelectStatement{
-				Fields: []*influxql.Field{{Expr: &influxql.Wildcard{}}},
+				IsRawQuery: true,
+				Fields:     []*influxql.Field{{Expr: &influxql.Wildcard{}}},
 				Sources: []influxql.Source{&influxql.Measurement{
 					Database: `db`,
 					Regex:    &influxql.RegexLiteral{Val: regexp.MustCompile("cpu.*")}}},
@@ -292,7 +294,8 @@ func TestParser_ParseStatement(t *testing.T) {
 		{
 			s: `SELECT * FROM "rp"./cpu.*/`,
 			stmt: &influxql.SelectStatement{
-				Fields: []*influxql.Field{{Expr: &influxql.Wildcard{}}},
+				IsRawQuery: true,
+				Fields:     []*influxql.Field{{Expr: &influxql.Wildcard{}}},
 				Sources: []influxql.Source{&influxql.Measurement{
 					RetentionPolicy: `rp`,
 					Regex:           &influxql.RegexLiteral{Val: regexp.MustCompile("cpu.*")}}},
