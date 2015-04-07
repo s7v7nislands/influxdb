@@ -284,10 +284,31 @@ func queryAndWait(t *testing.T, nodes Cluster, urlDb, q, expected, expectPattern
 // mergeMany ensures that when merging many series together and some of them have a different number
 // of points than others in a group by interval the results are correct
 var mergeMany = func(t *testing.T, node *Node, database, retention string) {
+	// fmtstr := `{"database": "%s", "retentionPolicy": "%s", "points": [{"name": "cpu", "timestamp": "%s", "tags": {"host": "server_%d"}, "fields": {"value": 22}}]}`
+
+	// seriesID := 1
+	// write(t, node, fmt.Sprintf(fmtstr, database, retention, time.Unix(int64(1), int64(0)).Format(time.RFC3339), seriesID))
+	// write(t, node, fmt.Sprintf(fmtstr, database, retention, time.Unix(int64(2), int64(0)).Format(time.RFC3339), seriesID))
+	// write(t, node, fmt.Sprintf(fmtstr, database, retention, time.Unix(int64(3), int64(0)).Format(time.RFC3339), seriesID))
+	// write(t, node, fmt.Sprintf(fmtstr, database, retention, time.Unix(int64(4), int64(0)).Format(time.RFC3339), seriesID))
+	// write(t, node, fmt.Sprintf(fmtstr, database, retention, time.Unix(int64(5), int64(0)).Format(time.RFC3339), seriesID))
+	// write(t, node, fmt.Sprintf(fmtstr, database, retention, time.Unix(int64(6), int64(0)).Format(time.RFC3339), seriesID))
+
+	// seriesID = 2
+	// write(t, node, fmt.Sprintf(fmtstr, database, retention, time.Unix(int64(1), int64(0)).Format(time.RFC3339), seriesID))
+	// write(t, node, fmt.Sprintf(fmtstr, database, retention, time.Unix(int64(2), int64(0)).Format(time.RFC3339), seriesID))
+	// write(t, node, fmt.Sprintf(fmtstr, database, retention, time.Unix(int64(3), int64(0)).Format(time.RFC3339), seriesID))
+	// write(t, node, fmt.Sprintf(fmtstr, database, retention, time.Unix(int64(4), int64(0)).Format(time.RFC3339), seriesID))
+
+	// seriesID = 3
+	// write(t, node, fmt.Sprintf(fmtstr, database, retention, time.Unix(int64(1), int64(0)).Format(time.RFC3339), seriesID))
+	// write(t, node, fmt.Sprintf(fmtstr, database, retention, time.Unix(int64(2), int64(0)).Format(time.RFC3339), seriesID))
+
 	for i := 1; i < 11; i++ {
 		for j := 1; j < 5+i%3; j++ {
 			data := fmt.Sprintf(`{"database": "%s", "retentionPolicy": "%s", "points": [{"name": "cpu", "timestamp": "%s", "tags": {"host": "server_%d"}, "fields": {"value": 22}}]}`,
 				database, retention, time.Unix(int64(j), int64(0)).Format(time.RFC3339), i)
+			fmt.Printf("data = %#v\n", data)
 			write(t, node, data)
 		}
 
@@ -988,9 +1009,10 @@ func runTestsData(t *testing.T, testName string, nodes Cluster, database, retent
 			expected: `{"results":[{"series":[{"name":"memory","columns":["_id","host","region"],"values":[[2,"serverB","uswest"]]}]}]}`,
 		},
 		{
-			query:    `SELECT * FROM cpu`,
-			queryDb:  "%DB%",
-			expected: `{"results":[{"error":"measurement not found: \"mydb\".\"myrp\".\"cpu\""}]}`,
+			query:   `SELECT * FROM cpu`,
+			queryDb: "%DB%",
+			//expected: `{"results":[{"error":"measurement not found: \"mydb\".\"myrp\".\"cpu\""}]}`,
+			expectPattern: `measurement not found: .*cpu.*`,
 		},
 		{
 			query:    `SELECT * FROM memory where host='serverB'`,
@@ -1273,7 +1295,7 @@ func runTestsData(t *testing.T, testName string, nodes Cluster, database, retent
 		},
 		{
 			query:    `SHOW CONTINUOUS QUERIES`,
-			expected: `{"results":[{"series":[{"name":"%DB%","columns":["name","query"],"values":[["myquery","CREATE CONTINUOUS QUERY myquery ON %DB% BEGIN SELECT count(value) INTO \"%DB%\".\"%RP%\".\"measure1\" FROM \"%DB%\".\"%RP%\".\"myseries\" GROUP BY time(10m) END"]]}]}]}`,
+			expected: `{"results":[{"series":[{"name":"%DB%","columns":["name","query"],"values":[["myquery","CREATE CONTINUOUS QUERY myquery ON %DB% BEGIN SELECT count(value) INTO \"%DB%\".\"%RP%\".measure1 FROM \"%DB%\".\"%RP%\".myseries GROUP BY time(10m) END"]]}]}]}`,
 		},
 	}
 
@@ -1308,6 +1330,7 @@ func runTestsData(t *testing.T, testName string, nodes Cluster, database, retent
 
 		if tt.skip {
 			t.Logf("SKIPPING TEST %s", tt.name)
+			continue
 		}
 
 		fmt.Printf("TEST: %d: %s\n", i, name)

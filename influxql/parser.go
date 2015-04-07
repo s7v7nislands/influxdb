@@ -1679,6 +1679,26 @@ func (p *Parser) ParseExpr() (Expr, error) {
 	}
 }
 
+// parseVarRef parses a reference to a measurement or field.
+func (p *Parser) parseVarRef() (*VarRef, error) {
+	// Save the current position in case we need to report an error.
+	_, pos, _ := p.s.curr()
+
+	// Parse the segments of the variable ref.
+	segments, err := p.parseSegmentedIdents()
+	if err != nil {
+		return nil, err
+	}
+
+	vr := &VarRef{Val: strings.Join(segments, ".")}
+
+	if len(segments) > 2 {
+		return nil, &ParseError{Message: fmt.Sprintf("too many identifiers: %s", vr.Val), Pos: pos}
+	}
+
+	return vr, nil
+}
+
 // parseUnaryExpr parses an non-binary expression.
 func (p *Parser) parseUnaryExpr() (Expr, error) {
 	// If the first token is a LPAREN then parse it as its own grouped expression.
@@ -1705,17 +1725,21 @@ func (p *Parser) parseUnaryExpr() (Expr, error) {
 		// Otherwise parse as a variable reference.
 		if tok0, _, _ := p.scan(); tok0 == LPAREN {
 			return p.parseCall(lit)
-		} else if tok0 == DOT {
-			p.unscan()
-			p.unscan()
-			segments, err := p.parseSegmentedIdents()
-			if err != nil {
-				return nil, err
-			}
-			return &VarRef{Val: QuoteIdent(segments...)}, nil
-		}
-		p.unscan()
-		return &VarRef{Val: lit}, nil
+		} //else if tok0 == DOT {
+		//p.unscan()
+		// p.unscan()
+		// segments, err := p.parseSegmentedIdents()
+		// if err != nil {
+		// 	return nil, err
+		// }
+		// vr := &VarRef{}
+		// return &VarRef{Val: QuoteIdent(segments...)}, nil
+		//}
+		p.unscan() // unscan the last token (wasn't a LPAREN)
+		p.unscan() // unscan the IDENT token
+
+		// Parse it as a VarRef.
+		return p.parseVarRef()
 	case STRING:
 		// If literal looks like a date time then parse it as a time literal.
 		if isDateTimeString(lit) {
