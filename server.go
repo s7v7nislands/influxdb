@@ -3124,7 +3124,7 @@ func (s *Server) NormalizeMeasurement(m *influxql.Measurement, defaultDatabase s
 
 func (s *Server) normalizeMeasurement(m *influxql.Measurement, defaultDatabase string) error {
 	if defaultDatabase == "" {
-		panic("")
+		return errors.New("no default database specified")
 	}
 	if m.Name == "" && m.Regex == nil {
 		return errors.New("invalid measurement")

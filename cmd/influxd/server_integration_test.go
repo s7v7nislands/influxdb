@@ -284,34 +284,12 @@ func queryAndWait(t *testing.T, nodes Cluster, urlDb, q, expected, expectPattern
 // mergeMany ensures that when merging many series together and some of them have a different number
 // of points than others in a group by interval the results are correct
 var mergeMany = func(t *testing.T, node *Node, database, retention string) {
-	// fmtstr := `{"database": "%s", "retentionPolicy": "%s", "points": [{"name": "cpu", "timestamp": "%s", "tags": {"host": "server_%d"}, "fields": {"value": 22}}]}`
-
-	// seriesID := 1
-	// write(t, node, fmt.Sprintf(fmtstr, database, retention, time.Unix(int64(1), int64(0)).Format(time.RFC3339), seriesID))
-	// write(t, node, fmt.Sprintf(fmtstr, database, retention, time.Unix(int64(2), int64(0)).Format(time.RFC3339), seriesID))
-	// write(t, node, fmt.Sprintf(fmtstr, database, retention, time.Unix(int64(3), int64(0)).Format(time.RFC3339), seriesID))
-	// write(t, node, fmt.Sprintf(fmtstr, database, retention, time.Unix(int64(4), int64(0)).Format(time.RFC3339), seriesID))
-	// write(t, node, fmt.Sprintf(fmtstr, database, retention, time.Unix(int64(5), int64(0)).Format(time.RFC3339), seriesID))
-	// write(t, node, fmt.Sprintf(fmtstr, database, retention, time.Unix(int64(6), int64(0)).Format(time.RFC3339), seriesID))
-
-	// seriesID = 2
-	// write(t, node, fmt.Sprintf(fmtstr, database, retention, time.Unix(int64(1), int64(0)).Format(time.RFC3339), seriesID))
-	// write(t, node, fmt.Sprintf(fmtstr, database, retention, time.Unix(int64(2), int64(0)).Format(time.RFC3339), seriesID))
-	// write(t, node, fmt.Sprintf(fmtstr, database, retention, time.Unix(int64(3), int64(0)).Format(time.RFC3339), seriesID))
-	// write(t, node, fmt.Sprintf(fmtstr, database, retention, time.Unix(int64(4), int64(0)).Format(time.RFC3339), seriesID))
-
-	// seriesID = 3
-	// write(t, node, fmt.Sprintf(fmtstr, database, retention, time.Unix(int64(1), int64(0)).Format(time.RFC3339), seriesID))
-	// write(t, node, fmt.Sprintf(fmtstr, database, retention, time.Unix(int64(2), int64(0)).Format(time.RFC3339), seriesID))
-
 	for i := 1; i < 11; i++ {
 		for j := 1; j < 5+i%3; j++ {
 			data := fmt.Sprintf(`{"database": "%s", "retentionPolicy": "%s", "points": [{"name": "cpu", "timestamp": "%s", "tags": {"host": "server_%d"}, "fields": {"value": 22}}]}`,
-				database, retention, time.Unix(int64(j), int64(0)).Format(time.RFC3339), i)
-			fmt.Printf("data = %#v\n", data)
+				database, retention, time.Unix(int64(j), int64(0)).UTC().Format(time.RFC3339), i)
 			write(t, node, data)
 		}
-
 	}
 }
 
@@ -1009,9 +987,8 @@ func runTestsData(t *testing.T, testName string, nodes Cluster, database, retent
 			expected: `{"results":[{"series":[{"name":"memory","columns":["_id","host","region"],"values":[[2,"serverB","uswest"]]}]}]}`,
 		},
 		{
-			query:   `SELECT * FROM cpu`,
-			queryDb: "%DB%",
-			//expected: `{"results":[{"error":"measurement not found: \"mydb\".\"myrp\".\"cpu\""}]}`,
+			query:         `SELECT * FROM cpu`,
+			queryDb:       "%DB%",
 			expectPattern: `measurement not found: .*cpu.*`,
 		},
 		{
@@ -1028,6 +1005,16 @@ func runTestsData(t *testing.T, testName string, nodes Cluster, database, retent
 			query:    `SELECT * FROM memory where region='uswest' and host='serverB'`,
 			queryDb:  "%DB%",
 			expected: `{"results":[{"series":[{"name":"memory","columns":["time","val"],"values":[["2000-01-01T00:00:01Z",33.2]]}]}]}`,
+		},
+
+		// Drop non-existant measurement tests
+		{
+			reset:         true,
+			name:          "Drop non-existant measurement",
+			query:         `DROP MEASUREMENT doesntexist`,
+			queryDb:       "%DB%",
+			queryOne:      true,
+			expectPattern: `measurement not found: doesntexist.*`,
 		},
 
 		// Metadata display tests
@@ -1225,6 +1212,24 @@ func runTestsData(t *testing.T, testName string, nodes Cluster, database, retent
 			queryOne: true,
 			expected: `{"results":[{}]}`,
 		},
+		{
+			name:          "Check error when dropping non-existent database",
+			query:         `DROP DATABASE mydatabase`,
+			queryOne:      true,
+			expectPattern: `database not found: mydatabase.*`,
+		},
+		{
+			name:          "Check error when creating retention policy on non-existent database",
+			query:         `CREATE RETENTION POLICY rp1 ON mydatabase DURATION INF REPLICATION 1`,
+			queryOne:      true,
+			expectPattern: `database not found: mydatabase.*`,
+		},
+		{
+			name:          "Check error when deleting retention policy on non-existent database",
+			query:         `DROP RETENTION POLICY rp1 ON mydatabase`,
+			queryOne:      true,
+			expectPattern: `database not found: mydatabase.*`,
+		},
 
 		// User control tests
 		{
@@ -1362,7 +1367,7 @@ func runTestsData(t *testing.T, testName string, nodes Cluster, database, retent
 				urlDb = tt.queryDb
 			}
 			qry := rewriteDbRp(tt.query, database, retention)
-			got, ok := queryAndWait(t, nodes, rewriteDbRp(urlDb, database, retention), qry, rewriteDbRp(tt.expected, database, retention), rewriteDbRp(tt.expectPattern, database, retention), 1*time.Second)
+			got, ok := queryAndWait(t, qNodes, rewriteDbRp(urlDb, database, retention), qry, rewriteDbRp(tt.expected, database, retention), rewriteDbRp(tt.expectPattern, database, retention), 60*time.Second)
 			if !ok {
 				if tt.expected != "" {
 					t.Errorf("Test #%d: \"%s\" failed\n  query: %s\n  exp: %s\n  got: %s\n", i, name, qry, rewriteDbRp(tt.expected, database, retention), got)
@@ -1405,7 +1410,7 @@ func Test3NodeServer(t *testing.T) {
 	nodes := createCombinedNodeCluster(t, testName, dir, 3, 8190, nil)
 
 	runTestsData(t, testName, nodes, "mydb", "myrp")
-	runTest_rawDataReturnsInOrder(t, testName, nodes, "mydb", "myrp")
+	//runTest_rawDataReturnsInOrder(t, testName, nodes, "mydb", "myrp")
 
 }
 
